@@ -6,10 +6,13 @@ jobs:
     env:
       DBT_PROFILES_DIR: .
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: dbt build
-      - run: python ingest/quality_report.py && git diff --stat docs/quality.md
+      # The quality report must still match the committed one: a rule whose
+      # result changes shows up as a diff.
+      - run: cp target/run_results.json target/build_results.json && python ingest/quality_report.py
+      - run: git diff --stat docs/quality.md
