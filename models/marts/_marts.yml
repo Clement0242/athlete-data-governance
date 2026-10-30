@@ -1,0 +1,847 @@
+# Data dictionary and data contracts of the published layer. Every column has
+# a description, a unit and a sensitivity level; types are enforced.
+version: 2
+models:
+- name: dim_player
+  description: 'One row per pseudonymised player: period covered and what each source holds. The entry point to
+    check before using any player''s data.'
+  config:
+    contract:
+      enforced: true
+  meta:
+    owner: performance data team
+    grain: player
+  columns:
+  - name: player_id
+    data_type: varchar
+    description: Pseudonymised player identifier assigned by the provider (team + UUID).
+    meta:
+      sensitivity: pseudonymised identifier
+    data_tests:
+    - not_null
+    - unique
+  - name: team
+    data_type: varchar
+    description: Team code (TeamA or TeamB).
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - TeamA
+          - TeamB
+  - name: first_day
+    data_type: date
+    description: First day the player appears in any source.
+    meta:
+      sensitivity: operational
+    data_tests: &id001
+    - not_null
+  - name: last_day
+    data_type: date
+    description: Last day the player appears in any source.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+  - name: n_days
+    data_type: integer
+    description: Calendar days between first_day and last_day, inclusive.
+    meta:
+      sensitivity: operational
+      unit: days
+    data_tests:
+    - not_null
+    - accepted_range:
+        min_value: 1
+  - name: n_rpe_sessions
+    data_type: integer
+    description: Training sessions reported (after deduplication).
+    meta:
+      sensitivity: operational
+      unit: sessions
+  - name: n_gps_sessions
+    data_type: integer
+    description: Days with a GNSS / heart-rate recording.
+    meta:
+      sensitivity: operational
+      unit: sessions
+  - name: n_wellness_days
+    data_type: integer
+    description: Days with at least one wellness item answered.
+    meta:
+      sensitivity: operational
+      unit: days
+  - name: wellness_coverage
+    data_type: double
+    description: n_wellness_days / n_days.
+    meta:
+      sensitivity: operational
+      unit: ratio 0-1
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 1
+  - name: hr_max_estimated_bpm
+    data_type: double
+    description: Highest session heart-rate peak (99.5th percentile of a session) over validated sessions with a
+      plausible peak (150-225 bpm); null with fewer than 3 such sessions. The HRmax used for HR zones.
+    meta:
+      sensitivity: health
+      unit: bpm
+    data_tests:
+    - accepted_range:
+        min_value: 150
+        max_value: 225
+  - name: n_injury_episodes
+    data_type: integer
+    description: Injury episodes recorded.
+    meta:
+      sensitivity: health
+      unit: episodes
+  - name: has_subjective_data
+    data_type: boolean
+    description: At least one RPE session report.
+    meta:
+      sensitivity: operational
+  - name: has_objective_data
+    data_type: boolean
+    description: At least one GNSS recording.
+    meta:
+      sensitivity: operational
+- name: fct_training_session
+  description: Training sessions reported in PmSys after the RPE (CR-10) questionnaire, exact repeats removed. sRPE
+    = RPE × duration (Foster 2001).
+  config:
+    contract:
+      enforced: true
+  meta:
+    owner: performance data team
+    grain: session
+  data_tests:
+  - expression_is_true:
+      arguments:
+        expression: srpe_au = rpe * duration_min
+  columns:
+  - name: session_id
+    data_type: varchar
+    description: 'Surrogate key: hash of player, day, RPE, duration and rank among identical reports.'
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - unique
+  - name: player_id
+    data_type: varchar
+    description: Pseudonymised player identifier assigned by the provider (team + UUID).
+    meta:
+      sensitivity: pseudonymised identifier
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: team
+    data_type: varchar
+    description: Team code (TeamA or TeamB).
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - TeamA
+          - TeamB
+  - name: session_date
+    data_type: date
+    description: Day of the session.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+  - name: rpe
+    data_type: integer
+    description: Rating of perceived exertion, CR-10 scale.
+    meta:
+      sensitivity: health
+      unit: 0-10
+    data_tests:
+    - not_null
+    - accepted_range:
+        min_value: 0
+        max_value: 10
+  - name: duration_min
+    data_type: integer
+    description: Session duration.
+    meta:
+      sensitivity: operational
+      unit: min
+    data_tests:
+    - not_null
+    - accepted_range:
+        min_value: 0
+        max_value: 240
+  - name: srpe_au
+    data_type: double
+    description: 'Session load: RPE × duration.'
+    meta:
+      sensitivity: health
+      unit: AU
+    data_tests:
+    - not_null
+    - accepted_range:
+        min_value: 0
+        max_value: 2400
+  - name: is_incomplete_report
+    data_type: boolean
+    description: 'RPE or duration recorded as 0: the session load is 0 by construction, not because the session
+      was easy.'
+    meta:
+      sensitivity: operational
+- name: fct_gps_session
+  description: 'Objective session metrics from STATSports APEX units: GNSS external load, accelerometer load and
+    heart-rate internal load, plus their coupling. One row per recording; validated recordings are unique per player
+    and day.'
+  config:
+    contract:
+      enforced: true
+  meta:
+    owner: performance data team
+    grain: recording
+  data_tests:
+  - unique_combination_of_columns:
+      arguments:
+        combination:
+        - player_id
+        - session_date
+      config:
+        where: gps_quality_flag = 'ok'
+  columns:
+  - name: recording_id
+    data_type: varchar
+    description: 'Surrogate key of a recording: hash of source file, start time and distance (two different recordings
+      can share a file name).'
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - unique
+  - name: player_id
+    data_type: varchar
+    description: Pseudonymised player identifier assigned by the provider (team + UUID).
+    meta:
+      sensitivity: pseudonymised identifier
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: team
+    data_type: varchar
+    description: Team code (TeamA or TeamB).
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - TeamA
+          - TeamB
+  - name: session_date
+    data_type: date
+    description: Recording day.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+  - name: gps_quality_flag
+    data_type: varchar
+    description: 'Validation of the GNSS recording: ok, duplicate_file_name (two different recordings under one
+      file name), implausible_duration (> 5 h), implausible_distance (> 16 km) or gnss_speed_spike (> 10 m/s). Only
+      ok recordings feed fct_player_day.'
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - ok
+          - duplicate_file_name
+          - implausible_duration
+          - implausible_distance
+          - gnss_speed_spike
+  - name: hr_quality_flag
+    data_type: varchar
+    description: 'Validation of the heart rate: ok, no_heart_rate (strap not worn, < 10 min or < 50 % of samples)
+      or frozen_sensor (one value for more than half of the session).'
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - ok
+          - no_heart_rate
+          - frozen_sensor
+  - name: duration_min
+    data_type: double
+    description: Recorded time (gaps over 1 s excluded).
+    meta:
+      sensitivity: operational
+      unit: min
+    data_tests:
+    - not_null
+    - accepted_range:
+        min_value: 0
+        max_value: 360
+        config:
+          where: gps_quality_flag = 'ok'
+  - name: distance_m
+    data_type: double
+    description: Total distance (Σ speed × Δt at 10 Hz).
+    meta:
+      sensitivity: operational
+      unit: m
+    data_tests:
+    - not_null
+    - accepted_range:
+        min_value: 0
+        max_value: 20000
+        config:
+          where: gps_quality_flag = 'ok'
+  - name: distance_0_2_m
+    data_type: double
+    description: Distance below 2 m/s (walking, jogging).
+    meta:
+      sensitivity: operational
+      unit: m
+  - name: distance_2_43_m
+    data_type: double
+    description: Distance from 2 to 4.3 m/s (running).
+    meta:
+      sensitivity: operational
+      unit: m
+  - name: distance_hsr_m
+    data_type: double
+    description: High-speed running, 4.3 to 5.56 m/s (15.5-20 km/h).
+    meta:
+      sensitivity: operational
+      unit: m
+  - name: distance_sprint_m
+    data_type: double
+    description: Sprinting, above 5.56 m/s (20 km/h).
+    meta:
+      sensitivity: operational
+      unit: m
+  - name: speed_max_ms
+    data_type: double
+    description: 99.9th percentile of 0.5 s smoothed speed (robust maximal speed).
+    meta:
+      sensitivity: operational
+      unit: m/s
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 10.5
+        config:
+          where: gps_quality_flag = 'ok'
+  - name: n_accelerations
+    data_type: integer
+    description: Accelerations above 2 m/s² lasting at least 0.5 s.
+    meta:
+      sensitivity: operational
+      unit: efforts
+  - name: n_decelerations
+    data_type: integer
+    description: Decelerations below -2 m/s² lasting at least 0.5 s.
+    meta:
+      sensitivity: operational
+      unit: efforts
+  - name: accelerometer_load_au
+    data_type: double
+    description: Summed change of 100 Hz triaxial acceleration / 100 (PlayerLoad-type).
+    meta:
+      sensitivity: operational
+      unit: AU
+  - name: hr_coverage
+    data_type: double
+    description: Share of samples with a plausible heart rate (40-230 bpm).
+    meta:
+      sensitivity: operational
+      unit: ratio 0-1
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 1
+  - name: hr_mean_bpm
+    data_type: double
+    description: Mean heart rate over valid samples. Null unless hr_quality_flag = 'ok'.
+    meta:
+      sensitivity: health
+      unit: bpm
+    data_tests:
+    - accepted_range:
+        min_value: 40
+        max_value: 230
+  - name: hr_peak_bpm
+    data_type: double
+    description: 99.5th percentile of heart rate in the session. Null unless hr_quality_flag = 'ok'.
+    meta:
+      sensitivity: health
+      unit: bpm
+    data_tests:
+    - accepted_range:
+        min_value: 40
+        max_value: 230
+  - name: edwards_trimp_au
+    data_type: double
+    description: 'Edwards TRIMP: minutes in 50-60, 60-70, 70-80, 80-90, 90-100 % HRmax weighted 1 to 5. Null when
+      HR coverage < 50 %.'
+    meta:
+      sensitivity: health
+      unit: AU
+  - name: minutes_above_90pct_hrmax
+    data_type: double
+    description: Time above 90 % of the player's HRmax.
+    meta:
+      sensitivity: health
+      unit: min
+  - name: hr_at_2_ms_bpm
+    data_type: double
+    description: Heart rate at 2 m/s from the regression of 30 s epoch HR on speed (moving epochs 0.8-3.5 m/s, at
+      least 15, R² ≥ 0.2). The cardiac cost of a standard running speed.
+    meta:
+      sensitivity: health
+      unit: bpm
+  - name: trimp_per_km
+    data_type: double
+    description: 'Internal / external load: Edwards TRIMP per km covered (sessions over 500 m).'
+    meta:
+      sensitivity: health
+      unit: AU/km
+  - name: source_file
+    data_type: varchar
+    description: File of the SoccerMon objective archive the session was extracted from (lineage).
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+- name: fct_injury_episode
+  description: 'Injury episodes rebuilt from daily PmSys reports: reports of the same body location are chained
+    while gaps stay within var(''injury_episode_gap_days'') days.'
+  config:
+    contract:
+      enforced: true
+  meta:
+    owner: 'medical staff (read: performance data team)'
+    grain: injury episode
+  data_tests:
+  - expression_is_true:
+      arguments:
+        expression: last_report_date >= onset_date
+  columns:
+  - name: injury_episode_id
+    data_type: varchar
+    description: 'Surrogate key: hash of player, body location and onset date.'
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - unique
+  - name: player_id
+    data_type: varchar
+    description: Pseudonymised player identifier assigned by the provider (team + UUID).
+    meta:
+      sensitivity: pseudonymised identifier
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: team
+    data_type: varchar
+    description: Team code (TeamA or TeamB).
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - TeamA
+          - TeamB
+  - name: body_location
+    data_type: varchar
+    description: Body location as coded in PmSys.
+    meta:
+      sensitivity: health
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('body_locations')
+          field: body_location
+  - name: body_region
+    data_type: varchar
+    description: Region from the body_locations reference table.
+    meta:
+      sensitivity: health
+  - name: side
+    data_type: varchar
+    description: left, right or central.
+    meta:
+      sensitivity: health
+  - name: onset_date
+    data_type: date
+    description: First report of the episode.
+    meta:
+      sensitivity: health
+    data_tests: *id001
+  - name: last_report_date
+    data_type: date
+    description: Last report of the episode.
+    meta:
+      sensitivity: health
+    data_tests: *id001
+  - name: span_days
+    data_type: integer
+    description: 'Days from first to last report, inclusive. A lower bound of time-loss: players stop reporting.'
+    meta:
+      sensitivity: health
+      unit: days
+    data_tests:
+    - accepted_range:
+        min_value: 1
+  - name: n_reports
+    data_type: integer
+    description: Daily reports in the episode.
+    meta:
+      sensitivity: health
+      unit: reports
+  - name: worst_severity
+    data_type: varchar
+    description: major if any report of the episode says major, otherwise minor.
+    meta:
+      sensitivity: health
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - minor
+          - major
+- name: fct_player_day
+  description: 'The analysis table: one row per player and calendar day with every source aligned. Null = not reported,
+    never zero; has_* flags say which sources reported.'
+  config:
+    contract:
+      enforced: true
+  meta:
+    owner: performance data team
+    grain: player × day
+  data_tests:
+  - unique_combination_of_columns:
+      arguments:
+        combination:
+        - player_id
+        - calendar_date
+  columns:
+  - name: player_id
+    data_type: varchar
+    description: Pseudonymised player identifier assigned by the provider (team + UUID).
+    meta:
+      sensitivity: pseudonymised identifier
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: team
+    data_type: varchar
+    description: Team code (TeamA or TeamB).
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - TeamA
+          - TeamB
+  - name: calendar_date
+    data_type: date
+    description: Calendar day.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+  - name: srpe_au
+    data_type: double
+    description: Sum of session RPE loads that day (deduplicated sessions).
+    meta:
+      sensitivity: health
+      unit: AU
+  - name: n_rpe_sessions
+    data_type: integer
+    description: Sessions reported that day.
+    meta:
+      sensitivity: operational
+      unit: sessions
+    data_tests: *id001
+  - name: distance_m
+    data_type: double
+    description: Total distance recorded that day (validated recordings only).
+    meta:
+      sensitivity: operational
+      unit: m
+  - name: distance_hsr_m
+    data_type: double
+    description: High-speed running distance (validated recordings only).
+    meta:
+      sensitivity: operational
+      unit: m
+  - name: distance_sprint_m
+    data_type: double
+    description: Sprint distance (validated recordings only).
+    meta:
+      sensitivity: operational
+      unit: m
+  - name: n_accelerations
+    data_type: integer
+    description: Accelerations > 2 m/s² (≥ 0.5 s) (validated recordings only).
+    meta:
+      sensitivity: operational
+      unit: efforts
+  - name: n_decelerations
+    data_type: integer
+    description: Decelerations < -2 m/s² (≥ 0.5 s) (validated recordings only).
+    meta:
+      sensitivity: operational
+      unit: efforts
+  - name: accelerometer_load_au
+    data_type: double
+    description: Accelerometer load (validated recordings only).
+    meta:
+      sensitivity: operational
+      unit: AU
+  - name: edwards_trimp_au
+    data_type: double
+    description: Edwards TRIMP (heart rate) (validated recordings only).
+    meta:
+      sensitivity: health
+      unit: AU
+  - name: hr_at_2_ms_bpm
+    data_type: double
+    description: Heart rate at 2 m/s (see fct_gps_session).
+    meta:
+      sensitivity: health
+      unit: bpm
+  - name: readiness
+    data_type: double
+    description: Readiness to train.
+    meta:
+      sensitivity: health
+      unit: 0-10
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 10
+  - name: fatigue
+    data_type: double
+    description: Fatigue (1 = very tired, 5 = very fresh).
+    meta:
+      sensitivity: health
+      unit: 1-5
+    data_tests:
+    - accepted_range:
+        min_value: 1
+        max_value: 5
+  - name: soreness
+    data_type: double
+    description: Muscle soreness (1 = very sore, 5 = none).
+    meta:
+      sensitivity: health
+      unit: 1-5
+    data_tests:
+    - accepted_range:
+        min_value: 1
+        max_value: 5
+  - name: stress
+    data_type: double
+    description: Stress (1 = very stressed, 5 = very relaxed).
+    meta:
+      sensitivity: health
+      unit: 1-5
+    data_tests:
+    - accepted_range:
+        min_value: 1
+        max_value: 5
+  - name: mood
+    data_type: double
+    description: Mood (1 = very low, 5 = very good).
+    meta:
+      sensitivity: health
+      unit: 1-5
+    data_tests:
+    - accepted_range:
+        min_value: 1
+        max_value: 5
+  - name: sleep_quality
+    data_type: double
+    description: Sleep quality (1 = very poor, 5 = very good).
+    meta:
+      sensitivity: health
+      unit: 1-5
+    data_tests:
+    - accepted_range:
+        min_value: 1
+        max_value: 5
+  - name: sleep_duration
+    data_type: double
+    description: Sleep duration reported.
+    meta:
+      sensitivity: health
+      unit: h
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 16
+  - name: is_injury_onset
+    data_type: boolean
+    description: First day of an injury episode.
+    meta:
+      sensitivity: health
+    data_tests: *id001
+  - name: is_injured
+    data_type: boolean
+    description: Between the first and last report of an injury episode.
+    meta:
+      sensitivity: health
+    data_tests: *id001
+  - name: is_ill
+    data_type: boolean
+    description: Illness reported that day.
+    meta:
+      sensitivity: health
+    data_tests: *id001
+  - name: has_rpe
+    data_type: boolean
+    description: At least one RPE session report that day.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+  - name: has_gps
+    data_type: boolean
+    description: A GNSS recording that day.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+  - name: has_wellness
+    data_type: boolean
+    description: At least one wellness item answered that day.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+- name: mart_source_coverage
+  description: 'Share of days each source reported, per player and month: the first thing to look at before trusting
+    an indicator.'
+  config:
+    contract:
+      enforced: true
+  meta:
+    owner: performance data team
+    grain: player × month
+  data_tests:
+  - unique_combination_of_columns:
+      arguments:
+        combination:
+        - player_id
+        - month
+  columns:
+  - name: player_id
+    data_type: varchar
+    description: Pseudonymised player identifier assigned by the provider (team + UUID).
+    meta:
+      sensitivity: pseudonymised identifier
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: team
+    data_type: varchar
+    description: Team code (TeamA or TeamB).
+    meta:
+      sensitivity: operational
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - TeamA
+          - TeamB
+  - name: month
+    data_type: date
+    description: First day of the month.
+    meta:
+      sensitivity: operational
+    data_tests: *id001
+  - name: n_days
+    data_type: integer
+    description: Days of the month in the player's period.
+    meta:
+      sensitivity: operational
+      unit: days
+    data_tests: *id001
+  - name: rpe_coverage
+    data_type: double
+    description: Share of days with an RPE report.
+    meta:
+      sensitivity: operational
+      unit: ratio 0-1
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 1
+  - name: gps_coverage
+    data_type: double
+    description: Share of days with a GNSS recording.
+    meta:
+      sensitivity: operational
+      unit: ratio 0-1
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 1
+  - name: wellness_coverage
+    data_type: double
+    description: Share of days with a wellness answer.
+    meta:
+      sensitivity: operational
+      unit: ratio 0-1
+    data_tests:
+    - accepted_range:
+        min_value: 0
+        max_value: 1
+exposures:
+- name: load_state_injury_analysis
+  label: Load states, heart rate × GPS and injuries
+  type: analysis
+  maturity: medium
+  url: https://github.com/Clement0242/football-load-injury
+  description: MILS hidden Markov load states, internal/external load coupling and injury analysis built on these
+    marts.
+  depends_on:
+  - ref('fct_player_day')
+  - ref('fct_gps_session')
+  - ref('fct_injury_episode')
+  - ref('dim_player')
+  owner:
+    name: Clément Verdier
+    email: clement.verdier@laposte.net

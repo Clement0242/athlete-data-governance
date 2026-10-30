@@ -1,0 +1,9 @@
+target/
+dbt_packages/
+logs/
+warehouse.duckdb
+warehouse.duckdb.wal
+__pycache__/
+data/derived/_parts-*/
+data/derived/extraction.log
+.user.yml

@@ -1,0 +1,12 @@
+body_location,body_region,side,label_en,label_fr
+head_neck,head_trunk,central,Head / neck,Tête / cou
+stomach_back,head_trunk,central,Abdomen / back,Abdomen / dos
+groin_hip,lower_limb,central,Groin / hip,Aine / hanche
+left_thigh,lower_limb,left,Left thigh,Cuisse gauche
+right_thigh,lower_limb,right,Right thigh,Cuisse droite
+left_knee,lower_limb,left,Left knee,Genou gauche
+right_knee,lower_limb,right,Right knee,Genou droit
+left_leg,lower_limb,left,Left lower leg,Jambe gauche
+right_leg,lower_limb,right,Right lower leg,Jambe droite
+left_foot,lower_limb,left,Left foot / ankle,Pied / cheville gauche
+right_foot,lower_limb,right,Right foot / ankle,Pied / cheville droit

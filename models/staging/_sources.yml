@@ -1,0 +1,90 @@
+version: 2
+
+sources:
+  - name: soccermon
+    description: >
+      SoccerMon (Midoglu et al. 2024, Scientific Data 11:553; Zenodo record
+      10033832, CC-BY 4.0): two Norwegian elite women's football teams,
+      seasons 2020-2021. Subjective reports come from the PmSys app. Players
+      are pseudonymised by the provider (Team + UUID); no name ever enters
+      this warehouse.
+    meta:
+      provider: Simula Research Laboratory / UiT
+      licence: CC-BY 4.0
+      personal_data: pseudonymised health data (GDPR art. 9 special category)
+      refresh: static research release
+    tables:
+      - name: training_sessions
+        description: "Session reports (RPE 0-10, duration in minutes, sRPE) per player, as one JSON document keyed by player."
+        meta:
+          external_location: "read_text('data/raw/soccermon/subjective/training-load/session.json')"
+      - name: injury_reports
+        description: "Injury reports; the `type` column is a JSON object mapping body location to severity. A long injury is reported again on several days."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/injury/injury.csv', header = true, all_varchar = true)"
+      - name: illness_reports
+        description: "Illness reports; `problems` is a JSON list of free-text symptoms."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/illness/illness.csv', header = true, all_varchar = true)"
+      - name: daily_load_wide
+        description: "Daily sRPE load per player as delivered (sum of session RPE × minutes). Wide format: one column per player."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/training-load/daily_load.csv', header = true, all_varchar = true)"
+      - name: atl_wide
+        description: "Acute training load as delivered (7-day rolling mean of daily load). Wide format: one column per player."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/training-load/atl.csv', header = true, all_varchar = true)"
+      - name: ctl28_wide
+        description: "Chronic training load as delivered (28-day rolling mean). Wide format: one column per player."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/training-load/ctl28.csv', header = true, all_varchar = true)"
+      - name: acwr_wide
+        description: "Acute:chronic workload ratio as delivered (ATL / CTL28). Wide format: one column per player."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/training-load/acwr.csv', header = true, all_varchar = true)"
+      - name: wellness_readiness_wide
+        description: "Daily wellness item `readiness` as delivered. Wide format: one column per player; empty when not reported."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/wellness/readiness.csv', header = true, all_varchar = true)"
+      - name: wellness_fatigue_wide
+        description: "Daily wellness item `fatigue` as delivered. Wide format: one column per player; empty when not reported."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/wellness/fatigue.csv', header = true, all_varchar = true)"
+      - name: wellness_soreness_wide
+        description: "Daily wellness item `soreness` as delivered. Wide format: one column per player; empty when not reported."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/wellness/soreness.csv', header = true, all_varchar = true)"
+      - name: wellness_stress_wide
+        description: "Daily wellness item `stress` as delivered. Wide format: one column per player; empty when not reported."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/wellness/stress.csv', header = true, all_varchar = true)"
+      - name: wellness_mood_wide
+        description: "Daily wellness item `mood` as delivered. Wide format: one column per player; empty when not reported."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/wellness/mood.csv', header = true, all_varchar = true)"
+      - name: wellness_sleep_quality_wide
+        description: "Daily wellness item `sleep_quality` as delivered. Wide format: one column per player; empty when not reported."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/wellness/sleep_quality.csv', header = true, all_varchar = true)"
+      - name: wellness_sleep_duration_wide
+        description: "Daily wellness item `sleep_duration` as delivered. Wide format: one column per player; empty when not reported."
+        meta:
+          external_location: "read_csv('data/raw/soccermon/subjective/wellness/sleep_duration.csv', header = true, all_varchar = true)"
+
+  - name: objective
+    description: >
+      Per-session features extracted from the SoccerMon objective archives
+      (STATSports APEX: 10 Hz GNSS with heart rate, 100 Hz accelerometer) by
+      `ingest/extract_objective.py`. The ~99 GB of raw files are read from
+      Zenodo by HTTP range requests and never stored.
+    meta:
+      produced_by: ingest/extract_objective.py
+    tables:
+      - name: gps_sessions
+        description: One row per player and recording day.
+        meta:
+          external_location: "read_parquet('data/derived/sessions-*.parquet')"
+      - name: gps_epochs
+        description: 30-second epochs of each recording (mean speed, mean heart rate, accelerometer load).
+        meta:
+          external_location: "read_parquet('data/derived/epochs-*.parquet')"

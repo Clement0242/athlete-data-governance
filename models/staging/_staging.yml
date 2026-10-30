@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_soccermon__training_sessions
+    description: Session reports exploded from the JSON document; exact repeats flagged, not removed.
+    data_tests:
+      - row_count_between:
+          arguments: {min_rows: 15000, max_rows: 20000}
+      - expression_is_true:
+          arguments: {expression: "srpe_au = rpe * duration_min"}
+    columns:
+      - name: session_id
+        data_tests: [not_null, unique]
+      - name: rpe
+        data_tests:
+          - accepted_range: {arguments: {min_value: 0, max_value: 10}}
+      - name: is_exact_repeat
+        description: Same player, day, RPE and duration as an earlier row of the same day.
+  - name: stg_soccermon__injury_reports
+    description: One row per report and body location.
+    columns:
+      - name: severity
+        data_tests:
+          - accepted_values: {arguments: {values: [minor, major]}}
+      - name: body_location
+        data_tests:
+          - relationships: {arguments: {to: "ref('body_locations')", field: body_location}}
+  - name: stg_soccermon__wellness
+    description: Wellness questionnaire, long format (player, day, item, value).
+    data_tests:
+      - unique_combination_of_columns:
+          arguments: {combination: [player_id, calendar_date, item]}
+  - name: stg_soccermon__provider_load_metrics
+    description: Provider-computed daily load, ATL, CTL28 and ACWR, kept for reconciliation only.
+  - name: stg_soccermon__illness_reports
+    description: Illness reports with free-text symptoms.
+  - name: stg_objective__gps_sessions
+    description: Per-recording features extracted from the objective archives.
+    columns:
+      - name: recording_id
+        data_tests: [not_null, unique]
+  - name: stg_objective__gps_epochs
+    description: 30-second epochs of each recording.

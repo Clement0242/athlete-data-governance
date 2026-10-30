@@ -1,0 +1,7 @@
+version: 2
+seeds:
+  - name: body_locations
+    description: Reference list of the body locations PmSys can report, with region and side. Managed by hand; a new code in the source fails the relationships test until it is added here.
+    columns:
+      - name: body_location
+        data_tests: [not_null, unique]
