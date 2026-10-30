@@ -65,7 +65,7 @@ The rules run on every build (`dbt build`: 128 nodes, 108 rules). Five of them
 are warnings: each documents a real defect of the published dataset, and the
 quarantine flags catch two more.
 
-* **Heart rate frozen at 82 bpm.** 2,863 of the 10,075 recordings show one
+* **Heart rate frozen at 82 bpm.** 2,871 of the 10,075 recordings show one
   value for most of the session, the strap's default. It would pass every range
   check; the share of time spent at a single value catches it. Only 1,323
   recordings have a usable heart rate.
@@ -143,7 +143,7 @@ wellness, blessures, GPS et fréquence cardiaque.
   documentation montre aussi le lignage.
 * **108 règles qualité** exécutées à chaque build. Elles ont trouvé de vrais
   défauts dans le jeu de données publié :
-  * une fréquence cardiaque figée à 82 bpm dans 2 863 enregistrements ;
+  * une fréquence cardiaque figée à 82 bpm dans 2 871 enregistrements ;
   * une charge quotidienne fournie qui ne correspond pas aux séances exportées
     (3 joueuses, 110 jours) ;
   * 28 joueuses pseudonymisées deux fois ;
